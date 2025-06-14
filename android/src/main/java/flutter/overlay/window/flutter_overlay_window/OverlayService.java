@@ -97,6 +97,12 @@ public class OverlayService extends Service implements View.OnTouchListener {
     @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR1)
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+
+        if (intent == null) { 
+            Log.e("OverlayService", "onStartCommand: Intent is null!");
+            return START_STICKY; 
+        }
+        
         mResources = getApplicationContext().getResources();
         int startX = intent.getIntExtra("startX", OverlayConstants.DEFAULT_XY);
         int startY = intent.getIntExtra("startY", OverlayConstants.DEFAULT_XY);
