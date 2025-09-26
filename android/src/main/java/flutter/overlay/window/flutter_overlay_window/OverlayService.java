@@ -94,6 +94,20 @@ public class OverlayService extends Service implements View.OnTouchListener {
         instance = null;
     }
 
+    private void openMainApp() {
+        try {
+            Intent i = new Intent(getApplicationContext(), com.joharride.driver.MainActivity.class);
+            i.setAction(Intent.ACTION_MAIN);
+            i.addCategory(Intent.CATEGORY_LAUNCHER);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            getApplicationContext().startActivity(i);
+        } catch (Exception e) {
+            android.util.Log.e("OverlayService", "openMainApp() failed", e);
+        }
+    }
+
     @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR1)
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -146,6 +160,9 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 int height = call.argument("height");
                 boolean enableDrag = call.argument("enableDrag");
                 resizeOverlay(width, height, enableDrag, result);
+            } else if (call.method.equals("openApp")) {
+                openMainApp();
+                result.success(null);
             }
         });
         overlayMessageChannel.setMessageHandler((message, reply) -> {
