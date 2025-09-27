@@ -154,6 +154,13 @@ public class OverlayService extends Service implements View.OnTouchListener {
         flutterView.setFocusable(true);
         flutterView.setFocusableInTouchMode(true);
         flutterView.setBackgroundColor(Color.TRANSPARENT);
+        flutterView.setOnClickListener(v -> {
+            Log.d("OverlayService", "Bubble clicked → openMainApp()");
+            openMainApp();
+        });
+        if (WindowSetup.enableDrag) {
+            flutterView.setOnTouchListener(this);
+        }
         flutterChannel.setMethodCallHandler((call, result) -> {
             if (call.method.equals("updateFlag")) {
                 String flag = call.argument("flag").toString();
@@ -409,6 +416,10 @@ public class OverlayService extends Service implements View.OnTouchListener {
             if (windowManager != null && WindowSetup.enableDrag) {
                 WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
                 switch (event.getAction()) {
+                    private static final int CLICK_TOLERANCE_PX = 10;
+                    private long downTime = 0;
+                    private float downX = 0f, downY = 0f;
+
                     case MotionEvent.ACTION_DOWN:
                         dragging = false;
                         downTime = android.os.SystemClock.elapsedRealtime();
