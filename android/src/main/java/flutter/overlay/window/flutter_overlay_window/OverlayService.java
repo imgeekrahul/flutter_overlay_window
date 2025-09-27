@@ -63,6 +63,20 @@ public class OverlayService extends Service implements View.OnTouchListener {
     private int clickableFlag = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
             WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
 
+    private static final int TOUCHABLE_FLAGS =
+        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+      | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+      | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+      | WindowManager.LayoutParams.FLAG_LAYOUT_INSET_DECOR
+      | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED;
+
+    private static final int PASSTHROUGH_FLAGS =
+        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        | WindowManager.LayoutParams.FLAG_LAYOUT_INSET_DECOR
+        | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED;
     private Handler mAnimationHandler = new Handler();
     private float lastX, lastY;
     private int lastYPosition;
@@ -195,20 +209,17 @@ public class OverlayService extends Service implements View.OnTouchListener {
         int dx = startX == OverlayConstants.DEFAULT_XY ? 0 : startX;
         int dy = startY == OverlayConstants.DEFAULT_XY ? -statusBarHeightPx() : startY;
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-                WindowSetup.width == -1999 ? -1 : WindowSetup.width,
-                WindowSetup.height != -1999 ? WindowSetup.height : screenHeight(),
-                0,
-                -statusBarHeightPx(),
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE,
-                WindowSetup.flag | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                        | WindowManager.LayoutParams.FLAG_LAYOUT_INSET_DECOR
-                        | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
-                PixelFormat.TRANSLUCENT
+            WindowSetup.width == -1999 ? -1 : WindowSetup.width,
+            WindowSetup.height != -1999 ? WindowSetup.height : screenHeight(),
+            0,
+            -statusBarHeightPx(),
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                : WindowManager.LayoutParams.TYPE_PHONE,
+            /* IMPORTANT: make it touchable */
+            TOUCHABLE_FLAGS,
+            PixelFormat.TRANSLUCENT
         );
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && WindowSetup.flag == clickableFlag) {
-            params.alpha = MAXIMUM_OPACITY_ALLOWED_FOR_S_AND_HIGHER;
-        }
         params.gravity = WindowSetup.gravity;
         windowManager.addView(flutterView, params);
         moveOverlay(dx, dy, null);
