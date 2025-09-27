@@ -117,17 +117,21 @@ public class OverlayService extends Service implements View.OnTouchListener {
 
     private void openMainApp() {
         try {
-            Intent i = new Intent(getApplicationContext(), com.joharride.driver.MainActivity.class);
-            i.setAction(Intent.ACTION_MAIN);
-            i.addCategory(Intent.CATEGORY_LAUNCHER);
-            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                    | Intent.FLAG_ACTIVITY_CLEAR_TOP
-                    | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            getApplicationContext().startActivity(i);
+          Intent i = getPackageManager().getLaunchIntentForPackage(getPackageName());
+          if (i == null) i = new Intent(getApplicationContext(), com.joharride.driver.MainActivity.class);
+          i.setAction(Intent.ACTION_MAIN);
+          i.addCategory(Intent.CATEGORY_LAUNCHER);
+          i.addFlags(
+              Intent.FLAG_ACTIVITY_NEW_TASK
+            | Intent.FLAG_ACTIVITY_CLEAR_TOP
+            | Intent.FLAG_ACTIVITY_SINGLE_TOP
+            | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+          );
+          startActivity(i);
         } catch (Exception e) {
-            Log.e("OverlayService", "openMainApp() failed", e);
+          Log.e("OverlayService", "openMainApp() failed", e);
         }
-    }
+      }
 
     @Override
     public void onTaskRemoved(Intent rootIntent) {
