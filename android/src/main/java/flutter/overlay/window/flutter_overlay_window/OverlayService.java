@@ -143,11 +143,13 @@ public class OverlayService extends Service implements View.OnTouchListener {
         if (engine != null) {
             try { engine.getLifecycleChannel().appIsResumed(); } catch (Throwable ignored) {}
         }
-        overlayMessageChannel.setMessageHandler((message, reply) -> {
-            if (WindowSetup.messenger != null) {
+        if (overlayMessageChannel != null) {
+            overlayMessageChannel.setMessageHandler((message, reply) -> {
+              if (WindowSetup.messenger != null) {
                 try { WindowSetup.messenger.send(message); } catch (Throwable ignored) {}
-            }
-        });
+              }
+            });
+          }
         flutterView = new FlutterView(getApplicationContext(), new FlutterTextureView(getApplicationContext()));
         flutterView.attachToFlutterEngine(FlutterEngineCache.getInstance().get(OverlayConstants.CACHED_TAG));
         flutterView.setFitsSystemWindows(true);
@@ -179,9 +181,6 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 result.success(null);
             }
         });
-        overlayMessageChannel.setMessageHandler((message, reply) -> {
-            WindowSetup.messenger.send(message);
-        });
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
@@ -211,7 +210,6 @@ public class OverlayService extends Service implements View.OnTouchListener {
             params.alpha = MAXIMUM_OPACITY_ALLOWED_FOR_S_AND_HIGHER;
         }
         params.gravity = WindowSetup.gravity;
-        flutterView.setOnTouchListener(this);
         windowManager.addView(flutterView, params);
         moveOverlay(dx, dy, null);
         return START_STICKY;
@@ -360,7 +358,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
         }
 
         createNotificationChannel();
-        Intent notificationIntent = new Intent(this, FlutterOverlayWindowPlugin.class);
+        Intent notificationIntent = new Intent(this, com.joharride.driver.MainActivity.class).setAction(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
         int pendingFlags;
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
             pendingFlags = PendingIntent.FLAG_IMMUTABLE;
@@ -411,122 +409,75 @@ public class OverlayService extends Service implements View.OnTouchListener {
         return mResources.getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT;
     }
 
-    @Override
+        private static final int CLICK_TOLERANCE_PX = 10;
+        private long downTime = 0;
+        private float downX = 0f, downY = 0f;
+    
+        @Override
         public boolean onTouch(View view, MotionEvent event) {
-            if (windowManager != null && WindowSetup.enableDrag) {
-                WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
-                switch (event.getAction()) {
-                    private static final int CLICK_TOLERANCE_PX = 10;
-                    private long downTime = 0;
-                    private float downX = 0f, downY = 0f;
+            if (windowManager == null || !WindowSetup.enableDrag) return false;
 
-                    case MotionEvent.ACTION_DOWN:
-                        dragging = false;
-                        downTime = android.os.SystemClock.elapsedRealtime();
-                        lastX = downX = event.getRawX();
-                        lastY = downY = event.getRawY();
-                        break;
+            WindowManager.LayoutParams params =
+                    (WindowManager.LayoutParams) flutterView.getLayoutParams();
 
-                    case MotionEvent.ACTION_MOVE:
-                        float dx = event.getRawX() - lastX;
-                        float dy = event.getRawY() - lastY;
-                        if (!dragging && dx * dx + dy * dy < 25) { // small jitter: ignore
-                            return false;
-                        }
-                        lastX = event.getRawX();
-                        lastY = event.getRawY();
-                        boolean invertX = (WindowSetup.gravity == (Gravity.TOP | Gravity.RIGHT))
-                            || (WindowSetup.gravity == (Gravity.CENTER | Gravity.RIGHT))
-                            || (WindowSetup.gravity == (Gravity.BOTTOM | Gravity.RIGHT));
-                        boolean invertY = (WindowSetup.gravity == (Gravity.BOTTOM | Gravity.LEFT))
-                            || (WindowSetup.gravity == Gravity.BOTTOM)
-                            || (WindowSetup.gravity == (Gravity.BOTTOM | Gravity.RIGHT));
-                        int xx = params.x + ((int) dx * (invertX ? -1 : 1));
-                        int yy = params.y + ((int) dy * (invertY ? -1 : 1));
-                        params.x = xx;
-                        params.y = yy;
-                        if (windowManager != null) windowManager.updateViewLayout(flutterView, params);
-                        dragging = true;
-                        break;
-
-                    case MotionEvent.ACTION_UP:
-                    case MotionEvent.ACTION_CANCEL:
-                        // Detect a tap (quick + tiny movement)
-                        float totalDx = Math.abs(event.getRawX() - downX);
-                        float totalDy = Math.abs(event.getRawY() - downY);
-                        long dt = android.os.SystemClock.elapsedRealtime() - downTime;
-                        if (!dragging && totalDx < CLICK_TOLERANCE_PX && totalDy < CLICK_TOLERANCE_PX && dt < 250) {
-                            openMainApp();   // ← LAUNCH APP ON TAP
-                            return true;
-                        }
-
-                        lastYPosition = params.y;
-                        if (!WindowSetup.positionGravity.equals("none")) {
-                            if (windowManager == null) return false;
-                            windowManager.updateViewLayout(flutterView, params);
-                            mTrayTimerTask = new TrayAnimationTimerTask();
-                            mTrayAnimationTimer = new Timer();
-                            mTrayAnimationTimer.schedule(mTrayTimerTask, 0, 25);
-                        }
-                        return false;
-
-                    default:
-                        return false;
-                }
-                return false;
-            }
-            return false;
-        }
-
-        if (windowManager != null && WindowSetup.enableDrag) {
-            WindowManager.LayoutParams params = (WindowManager.LayoutParams) flutterView.getLayoutParams();
-            switch (event.getAction()) {
+            switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     dragging = false;
-                    lastX = event.getRawX();
-                    lastY = event.getRawY();
-                    break;
-                case MotionEvent.ACTION_MOVE:
+                    downTime = android.os.SystemClock.elapsedRealtime();
+                    lastX = downX = event.getRawX();
+                    lastY = downY = event.getRawY();
+                    return true;
+
+                case MotionEvent.ACTION_MOVE: {
                     float dx = event.getRawX() - lastX;
                     float dy = event.getRawY() - lastY;
-                    if (!dragging && dx * dx + dy * dy < 25) {
-                        return false;
-                    }
+                    if (!dragging && dx * dx + dy * dy < 25) return false; // ignore tiny jitter
+
                     lastX = event.getRawX();
                     lastY = event.getRawY();
-                    boolean invertX = WindowSetup.gravity == (Gravity.TOP | Gravity.RIGHT)
-                            || WindowSetup.gravity == (Gravity.CENTER | Gravity.RIGHT)
-                            || WindowSetup.gravity == (Gravity.BOTTOM | Gravity.RIGHT);
-                    boolean invertY = WindowSetup.gravity == (Gravity.BOTTOM | Gravity.LEFT)
-                            || WindowSetup.gravity == Gravity.BOTTOM
-                            || WindowSetup.gravity == (Gravity.BOTTOM | Gravity.RIGHT);
+
+                    boolean invertX = (WindowSetup.gravity == (Gravity.TOP | Gravity.RIGHT))
+                            || (WindowSetup.gravity == (Gravity.CENTER | Gravity.RIGHT))
+                            || (WindowSetup.gravity == (Gravity.BOTTOM | Gravity.RIGHT));
+                    boolean invertY = (WindowSetup.gravity == (Gravity.BOTTOM | Gravity.LEFT))
+                            || (WindowSetup.gravity == Gravity.BOTTOM)
+                            || (WindowSetup.gravity == (Gravity.BOTTOM | Gravity.RIGHT));
+
                     int xx = params.x + ((int) dx * (invertX ? -1 : 1));
                     int yy = params.y + ((int) dy * (invertY ? -1 : 1));
                     params.x = xx;
                     params.y = yy;
-                    if (windowManager != null) {
-                        windowManager.updateViewLayout(flutterView, params);
-                    }
+
+                    windowManager.updateViewLayout(flutterView, params);
                     dragging = true;
-                    break;
+                    return true;
+                }
+
                 case MotionEvent.ACTION_UP:
-                case MotionEvent.ACTION_CANCEL:
+                case MotionEvent.ACTION_CANCEL: {
+                    float totalDx = Math.abs(event.getRawX() - downX);
+                    float totalDy = Math.abs(event.getRawY() - downY);
+                    long dt = android.os.SystemClock.elapsedRealtime() - downTime;
+
+                    // Tap → open app
+                    if (!dragging && totalDx < CLICK_TOLERANCE_PX && totalDy < CLICK_TOLERANCE_PX && dt < 250) {
+                        Log.d("OverlayService", "Tap detected → openMainApp()");
+                        openMainApp();
+                        return true;
+                    }
+
                     lastYPosition = params.y;
-                    if (!WindowSetup.positionGravity.equals("none")) {
-                        if (windowManager == null) return false;
+                    if (!"none".equals(WindowSetup.positionGravity)) {
                         windowManager.updateViewLayout(flutterView, params);
                         mTrayTimerTask = new TrayAnimationTimerTask();
                         mTrayAnimationTimer = new Timer();
                         mTrayAnimationTimer.schedule(mTrayTimerTask, 0, 25);
                     }
-                    return false;
-                default:
-                    return false;
+                    return true;
+                }
             }
             return false;
         }
-        return false;
-    }
 
     private class TrayAnimationTimerTask extends TimerTask {
         int mDestX;
