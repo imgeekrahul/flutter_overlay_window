@@ -116,22 +116,55 @@ public class OverlayService extends Service implements View.OnTouchListener {
     }
 
     private void openMainApp() {
+        Context ctx = getApplicationContext();
         try {
-          Intent i = getPackageManager().getLaunchIntentForPackage(getPackageName());
-          if (i == null) i = new Intent(getApplicationContext(), com.joharride.driver.MainActivity.class);
-          i.setAction(Intent.ACTION_MAIN);
-          i.addCategory(Intent.CATEGORY_LAUNCHER);
-          i.addFlags(
-              Intent.FLAG_ACTIVITY_NEW_TASK
-            | Intent.FLAG_ACTIVITY_CLEAR_TOP
-            | Intent.FLAG_ACTIVITY_SINGLE_TOP
-            | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-          );
-          startActivity(i);
+          Intent launch = ctx.getPackageManager()
+              .getLaunchIntentForPackage(ctx.getPackageName());
+          if (launch != null) {
+            launch.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK
+              | Intent.FLAG_ACTIVITY_CLEAR_TOP
+              | Intent.FLAG_ACTIVITY_SINGLE_TOP
+            );
+            ctx.startActivity(launch);
+            return;
+          }
         } catch (Exception e) {
-          Log.e("OverlayService", "openMainApp() failed", e);
+          Log.e("OverlayService", "startActivity failed", e);
         }
-      }
+        // Fallback for OEMs/Android 10+ that block direct background starts:
+        showWakeupNotification();
+    }
+      
+    private void showWakeupNotification() {
+        // High-priority, full-screen intent to bring MainActivity forward
+        Intent i = new Intent(this, com.joharride.driver.MainActivity.class)
+            .setAction(Intent.ACTION_MAIN)
+            .addCategory(Intent.CATEGORY_LAUNCHER)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+      
+        int piFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+            ? PendingIntent.FLAG_IMMUTABLE
+            : PendingIntent.FLAG_UPDATE_CURRENT;
+      
+        PendingIntent fsPi = PendingIntent.getActivity(this, 101, i, piFlags);
+      
+        NotificationCompat.Builder b = new NotificationCompat.Builder(this, OverlayConstants.CHANNEL_ID)
+            .setSmallIcon(R.drawable.notification_icon)
+            .setContentTitle("Opening Johar Ride…")
+            .setContentText("Tap if it doesn’t open automatically")
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_CALL) // helps OEMs allow full-screen
+            .setFullScreenIntent(fsPi, true)
+            .setAutoCancel(true)
+            .setOngoing(false);
+      
+        NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        nm.notify(OverlayConstants.NOTIFICATION_ID + 1, b.build());
+    }
+      
 
     @Override
     public void onTaskRemoved(Intent rootIntent) {
