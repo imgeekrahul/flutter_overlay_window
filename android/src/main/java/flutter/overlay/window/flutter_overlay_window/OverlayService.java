@@ -4,6 +4,7 @@ import android.app.ActivityManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -11,7 +12,6 @@ import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
-import android.app.PendingIntent;
 import android.graphics.Point;
 import android.os.Build;
 import android.os.Handler;
@@ -34,9 +34,9 @@ import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
 
+import io.flutter.FlutterInjector;
 import io.flutter.embedding.android.FlutterTextureView;
 import io.flutter.embedding.android.FlutterView;
-import io.flutter.FlutterInjector;
 import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.embedding.engine.FlutterEngineCache;
 import io.flutter.embedding.engine.FlutterEngineGroup;
@@ -56,8 +56,6 @@ public class OverlayService extends Service implements View.OnTouchListener {
     private Integer mNavigationBarHeight = -1;
     private Resources mResources;
 
-    public static final String INTENT_EXTRA_IS_CLOSE_WINDOW = "IsCloseWindow";
-
     private static OverlayService instance;
     public static boolean isRunning = false;
 
@@ -66,7 +64,6 @@ public class OverlayService extends Service implements View.OnTouchListener {
     private MethodChannel flutterChannel;
     private BasicMessageChannel<Object> overlayMessageChannel;
 
-    // “Passthrough” (not touchable by Flutter) vs “Touchable” flags
     private static final int TOUCHABLE_FLAGS =
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                     | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
@@ -76,7 +73,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
 
     private static final float MAXIMUM_OPACITY_ALLOWED_FOR_S_AND_HIGHER = 0.8f;
 
-    private Handler mAnimationHandler = new Handler();
+    private final Handler mAnimationHandler = new Handler();
     private float lastX, lastY;
     private int lastYPosition;
     private boolean dragging;
@@ -108,10 +105,10 @@ public class OverlayService extends Service implements View.OnTouchListener {
         super.onDestroy();
     }
 
-    /** Bring task to front if it exists, else relaunch the app like from launcher. */
+    /** Bring task to front if present; else relaunch the app from launcher. */
     private void openOrBringMainApp() {
         try {
-            final String appId = getApplicationContext().getPackageName(); // com.joharride.driver
+            final String appId = getApplicationContext().getPackageName();
             ActivityManager am = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
 
             boolean brought = false;
@@ -149,7 +146,6 @@ public class OverlayService extends Service implements View.OnTouchListener {
     @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR1)
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        // Keep running after process/task removal
         if (intent == null) {
             Log.e(TAG, "onStartCommand: Intent is null!");
             return START_STICKY;
@@ -157,7 +153,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
 
         mResources = getApplicationContext().getResources();
 
-        boolean isCloseWindow = intent.getBooleanExtra(INTENT_EXTRA_IS_CLOSE_WINDOW, false);
+        boolean isCloseWindow = intent.getBooleanExtra(OverlayConstants.INTENT_EXTRA_IS_CLOSE_WINDOW, false);
         if (isCloseWindow) {
             if (windowManager != null && flutterView != null) {
                 try { windowManager.removeView(flutterView); } catch (Throwable ignored) {}
@@ -177,14 +173,13 @@ public class OverlayService extends Service implements View.OnTouchListener {
         isRunning = true;
         Log.d(TAG, "Service started");
 
-        // Ensure engine exists
+        // Ensure a FlutterEngine for the overlay entrypoint
         FlutterEngine engine = FlutterEngineCache.getInstance().get(OverlayConstants.CACHED_TAG);
         if (engine == null) {
-            Log.e(TAG, "Cached engine missing; creating one");
             FlutterEngineGroup group = new FlutterEngineGroup(this);
             DartExecutor.DartEntrypoint entryPoint = new DartExecutor.DartEntrypoint(
                     FlutterInjector.instance().flutterLoader().findAppBundlePath(),
-                    "overlayMain" // your overlay entrypoint
+                    "overlayMain" // Dart entrypoint
             );
             engine = group.createAndRunEngine(this, entryPoint);
             FlutterEngineCache.getInstance().put(OverlayConstants.CACHED_TAG, engine);
@@ -197,25 +192,33 @@ public class OverlayService extends Service implements View.OnTouchListener {
         overlayMessageChannel = new BasicMessageChannel<>(
                 engine.getDartExecutor(), OverlayConstants.MESSENGER_TAG, JSONMessageCodec.INSTANCE);
 
-        // Handle "openApp" calls coming from Dart (optional)
+        // Allow Dart to tell us to open the app
         flutterChannel.setMethodCallHandler((call, result) -> {
-            if ("openApp".equals(call.method)) {
-                openOrBringMainApp();
-                result.success(null);
-            } else if ("updateFlag".equals(call.method)) {
-                String flag = String.valueOf(call.argument("flag"));
-                updateOverlayFlag(result, flag);
-            } else if ("updateOverlayPosition".equals(call.method)) {
-                Integer x = call.argument("x");
-                Integer y = call.argument("y");
-                moveOverlay(x == null ? 0 : x, y == null ? 0 : y, result);
-            } else if ("resizeOverlay".equals(call.method)) {
-                Integer w = call.argument("width");
-                Integer h = call.argument("height");
-                Boolean drag = call.argument("enableDrag");
-                resizeOverlay(w == null ? -1 : w, h == null ? -1 : h, drag != null && drag, result);
-            } else {
-                result.notImplemented();
+            switch (call.method) {
+                case "openApp":
+                    openOrBringMainApp();
+                    result.success(null);
+                    break;
+                case "updateFlag": {
+                    String flag = String.valueOf(call.argument("flag"));
+                    updateOverlayFlag(result, flag);
+                    break;
+                }
+                case "updateOverlayPosition": {
+                    Integer x = call.argument("x");
+                    Integer y = call.argument("y");
+                    moveOverlay(x == null ? 0 : x, y == null ? 0 : y, result);
+                    break;
+                }
+                case "resizeOverlay": {
+                    Integer w = call.argument("width");
+                    Integer h = call.argument("height");
+                    Boolean drag = call.argument("enableDrag");
+                    resizeOverlay(w == null ? -1 : w, h == null ? -1 : h, drag != null && drag, result);
+                    break;
+                }
+                default:
+                    result.notImplemented();
             }
         });
 
@@ -227,7 +230,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
         flutterView.setFocusable(true);
         flutterView.setFocusableInTouchMode(true);
         flutterView.setBackgroundColor(Color.TRANSPARENT);
-        flutterView.setOnTouchListener(this); // handles drag + tap → open app
+        flutterView.setOnTouchListener(this);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.HONEYCOMB) {
             windowManager.getDefaultDisplay().getSize(szWindow);
@@ -254,7 +257,6 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 PixelFormat.TRANSLUCENT
         );
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // Android 12+ requires <= 0.8 alpha for touchable TYPE_APPLICATION_OVERLAY
             params.alpha = MAXIMUM_OPACITY_ALLOWED_FOR_S_AND_HIGHER;
         }
         params.gravity = WindowSetup.gravity;
@@ -355,7 +357,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
     public void onCreate() {
         super.onCreate();
 
-        // Ensure engine exists so channels are ready quickly
+        // Pre-warm engine
         FlutterEngine engine = FlutterEngineCache.getInstance().get(OverlayConstants.CACHED_TAG);
         if (engine == null) {
             FlutterEngineGroup group = new FlutterEngineGroup(this);
@@ -367,7 +369,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
             FlutterEngineCache.getInstance().put(OverlayConstants.CACHED_TAG, engine);
         }
 
-        // Small ongoing notification to keep the service in the foreground
+        // Foreground notification
         createNotificationChannel();
         Intent notificationIntent = new Intent(this, com.joharride.driver.MainActivity.class)
                 .setAction(Intent.ACTION_MAIN)
@@ -408,7 +410,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
     }
 
     private int dpToPx(int dp) {
-        return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, (float) dp, mResources.getDisplayMetrics());
+        return (int) TypedValue.applyDimension(TypedValue.COMPLEX_DIP, (float) dp, mResources.getDisplayMetrics());
     }
 
     private double pxToDp(int px) {
@@ -419,7 +421,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
         return mResources.getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT;
     }
 
-    /** Drag + tap detection → tap opens/relauches app */
+    /** Drag + tap detection; tap opens/relaunches app */
     @Override
     public boolean onTouch(View view, MotionEvent event) {
         if (windowManager == null) return false;
@@ -437,7 +439,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
             case MotionEvent.ACTION_MOVE: {
                 float dx = event.getRawX() - lastX;
                 float dy = event.getRawY() - lastY;
-                if (!dragging && dx * dx + dy * dy < 25) return false; // ignore tiny jitter
+                if (!dragging && dx * dx + dy * dy < 25) return false;
 
                 lastX = event.getRawX();
                 lastY = event.getRawY();
@@ -465,7 +467,6 @@ public class OverlayService extends Service implements View.OnTouchListener {
                 float totalDy = Math.abs(event.getRawY() - downY);
                 long dt = android.os.SystemClock.elapsedRealtime() - downTime;
 
-                // Tap → bring to front / relaunch app
                 if (!dragging && totalDx < CLICK_TOLERANCE_PX && totalDy < CLICK_TOLERANCE_PX && dt < 250) {
                     openOrBringMainApp();
                     return true;
