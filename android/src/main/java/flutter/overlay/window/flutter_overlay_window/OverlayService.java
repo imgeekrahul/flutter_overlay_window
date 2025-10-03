@@ -245,17 +245,19 @@ public class OverlayService extends Service implements View.OnTouchListener {
         int dx = startX == OverlayConstants.DEFAULT_XY ? 0 : startX;
         int dy = startY == OverlayConstants.DEFAULT_XY ? -statusBarHeightPx() : startY;
 
+        int bubble = dpToPx(56);
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-                WindowSetup.width == -1999 ? -1 : WindowSetup.width,
-                (WindowSetup.height != -1999) ? WindowSetup.height : screenHeight(),
-                0,
-                -statusBarHeightPx(),
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                        ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                        : WindowManager.LayoutParams.TYPE_PHONE,
-                TOUCHABLE_FLAGS,
-                PixelFormat.TRANSLUCENT
+            (WindowSetup.width  == -1999 || WindowSetup.width  == -1) ? bubble : dpToPx(WindowSetup.width),
+            (WindowSetup.height == -1999 || WindowSetup.height == -1) ? bubble : dpToPx(WindowSetup.height),
+            0,
+            0,
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                : WindowManager.LayoutParams.TYPE_PHONE,
+            TOUCHABLE_FLAGS,
+            PixelFormat.TRANSLUCENT
         );
+        params.gravity = (WindowSetup.gravity == 0) ? (Gravity.BOTTOM | Gravity.RIGHT) : WindowSetup.gravity;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             params.alpha = MAXIMUM_OPACITY_ALLOWED_FOR_S_AND_HIGHER;
         }
