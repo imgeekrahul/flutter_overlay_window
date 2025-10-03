@@ -143,30 +143,6 @@ public class OverlayService extends Service implements View.OnTouchListener {
         }
     }
 
-    @Override
-    public void onTaskRemoved(Intent rootIntent) {
-        try {
-            Intent i = new Intent(getApplicationContext(), OverlayService.class);
-            int flags = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
-                ? PendingIntent.FLAG_IMMUTABLE
-                : PendingIntent.FLAG_UPDATE_CURRENT;
-            PendingIntent pi = PendingIntent.getService(getApplicationContext(), 1, i, flags);
-
-            long triggerAt = System.currentTimeMillis() + 500; // restart soon
-            AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
-            if (am != null) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi);
-            } else {
-                am.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pi);
-            }
-            }
-        } catch (Throwable t) {
-            Log.e(TAG, "onTaskRemoved restart scheduling failed", t);
-        }
-        super.onTaskRemoved(rootIntent);
-    }
-
     @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR1)
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -269,19 +245,17 @@ public class OverlayService extends Service implements View.OnTouchListener {
         int dx = startX == OverlayConstants.DEFAULT_XY ? 0 : startX;
         int dy = startY == OverlayConstants.DEFAULT_XY ? -statusBarHeightPx() : startY;
 
-        int bubble = dpToPx(56);
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
-            (WindowSetup.width  == -1999 || WindowSetup.width  == -1) ? bubble : dpToPx(WindowSetup.width),
-            (WindowSetup.height == -1999 || WindowSetup.height == -1) ? bubble : dpToPx(WindowSetup.height),
-            0,
-            0,
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                : WindowManager.LayoutParams.TYPE_PHONE,
-            TOUCHABLE_FLAGS,
-            PixelFormat.TRANSLUCENT
+                WindowSetup.width == -1999 ? -1 : WindowSetup.width,
+                (WindowSetup.height != -1999) ? WindowSetup.height : screenHeight(),
+                0,
+                -statusBarHeightPx(),
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                        ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                        : WindowManager.LayoutParams.TYPE_PHONE,
+                TOUCHABLE_FLAGS,
+                PixelFormat.TRANSLUCENT
         );
-        params.gravity = (WindowSetup.gravity == 0) ? (Gravity.BOTTOM | Gravity.RIGHT) : WindowSetup.gravity;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             params.alpha = MAXIMUM_OPACITY_ALLOWED_FOR_S_AND_HIGHER;
         }
@@ -292,6 +266,7 @@ public class OverlayService extends Service implements View.OnTouchListener {
             moveOverlay(dx, dy, null);
           } catch (Throwable t) {
             Log.e(TAG, "addView failed", t);
+            // Optionally stopSelf() or back off to a smaller size
           }
 
         return START_STICKY;
