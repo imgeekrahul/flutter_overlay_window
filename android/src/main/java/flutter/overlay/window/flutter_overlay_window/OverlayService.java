@@ -143,6 +143,30 @@ public class OverlayService extends Service implements View.OnTouchListener {
         }
     }
 
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        try {
+            Intent i = new Intent(getApplicationContext(), OverlayService.class);
+            int flags = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                ? PendingIntent.FLAG_IMMUTABLE
+                : PendingIntent.FLAG_UPDATE_CURRENT;
+            PendingIntent pi = PendingIntent.getService(getApplicationContext(), 1, i, flags);
+
+            long triggerAt = System.currentTimeMillis() + 500; // restart soon
+            AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+            if (am != null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+            } else {
+                am.setExact(AlarmManager.RTC_WAKEUP, triggerAt, pi);
+            }
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "onTaskRemoved restart scheduling failed", t);
+        }
+        super.onTaskRemoved(rootIntent);
+    }
+
     @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR1)
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
