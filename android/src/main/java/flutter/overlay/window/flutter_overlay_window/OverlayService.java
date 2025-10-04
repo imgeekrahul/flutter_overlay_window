@@ -105,6 +105,33 @@ public class OverlayService extends Service implements View.OnTouchListener {
         super.onDestroy();
     }
 
+    private void updateForegroundNotification(String title, String content, int visibility) {
+        // Ensure channel exists (safe to call repeatedly)
+        createNotificationChannel();
+    
+        Intent notificationIntent = new Intent(this, com.joharride.driver.MainActivity.class)
+                .setAction(Intent.ACTION_MAIN)
+                .addCategory(Intent.CATEGORY_LAUNCHER);
+        int pendingFlags = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                ? PendingIntent.FLAG_IMMUTABLE
+                : PendingIntent.FLAG_UPDATE_CURRENT;
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, pendingFlags);
+    
+        int notifyIcon = getDrawableResourceId("mipmap", "launcher");
+        Notification notification = new NotificationCompat.Builder(this, OverlayConstants.CHANNEL_ID)
+                .setContentTitle(title)
+                .setContentText(content)
+                .setSmallIcon(notifyIcon == 0 ? R.drawable.notification_icon : notifyIcon)
+                .setContentIntent(pendingIntent)                 // <— keep tap-to-open
+                .setVisibility(visibility)
+                .setCategory(Notification.CATEGORY_SERVICE)
+                .setOnlyAlertOnce(true)
+                .setOngoing(true)
+                .build();
+    
+        startForeground(OverlayConstants.NOTIFICATION_ID, notification);
+    }    
+
     /** Bring task to front if present; else relaunch the app from launcher. */
     private void openOrBringMainApp() {
         try {
@@ -173,6 +200,13 @@ public class OverlayService extends Service implements View.OnTouchListener {
         isRunning = true;
         Log.d(TAG, "Service started");
 
+        createNotificationChannel();
+        updateForegroundNotification(
+            WindowSetup.overlayTitle,
+            WindowSetup.overlayContent,
+            WindowSetup.notificationVisibility
+        );
+
         // Ensure a FlutterEngine for the overlay entrypoint
         FlutterEngine engine = FlutterEngineCache.getInstance().get(OverlayConstants.CACHED_TAG);
         if (engine == null) {
@@ -217,6 +251,24 @@ public class OverlayService extends Service implements View.OnTouchListener {
                     resizeOverlay(w == null ? -1 : w, h == null ? -1 : h, drag != null && drag, result);
                     break;
                 }
+                case "updateNotification": {
+                    String title = call.argument("title");
+                    String content = call.argument("content");
+                    Integer visibility = call.argument("visibility"); // pass NotificationCompat.VISIBILITY_* from Dart via int
+                
+                    if (title == null) title = WindowSetup.overlayTitle;
+                    if (content == null) content = WindowSetup.overlayContent;
+                    int vis = (visibility == null) ? WindowSetup.notificationVisibility : visibility;
+                
+                    // Also mirror into WindowSetup so future restarts keep the same text
+                    WindowSetup.overlayTitle = title;
+                    WindowSetup.overlayContent = content;
+                    WindowSetup.notificationVisibility = vis;
+                
+                    updateForegroundNotification(title, content, vis);
+                    result.success(true);
+                    break;
+                }                
                 default:
                     result.notImplemented();
             }
@@ -315,14 +367,14 @@ public class OverlayService extends Service implements View.OnTouchListener {
         if (windowManager != null && flutterView != null) {
             WindowManager.LayoutParams p = (WindowManager.LayoutParams) flutterView.getLayoutParams();
             p.width  = (width == -1999 || width == -1) ? -1 : dpToPx(width);
-            p.height = (height != 1999  || height != -1) ? dpToPx(height) : height;
+            p.height = (height == -1999 || height == -1) ? height : dpToPx(height); // corrected
             WindowSetup.enableDrag = enableDrag;
             windowManager.updateViewLayout(flutterView, p);
             result.success(true);
         } else {
             result.success(false);
         }
-    }
+    }                     
 
     private void moveOverlay(int x, int y, MethodChannel.Result result) {
         if (windowManager != null && flutterView != null) {
@@ -356,13 +408,13 @@ public class OverlayService extends Service implements View.OnTouchListener {
             return true;
         }
         return false;
-    }
+    }    
 
     @Override
     public void onCreate() {
         super.onCreate();
 
-        // Pre-warm engine
+        // Pre-warm engine (unchanged) …
         FlutterEngine engine = FlutterEngineCache.getInstance().get(OverlayConstants.CACHED_TAG);
         if (engine == null) {
             FlutterEngineGroup group = new FlutterEngineGroup(this);
@@ -374,28 +426,17 @@ public class OverlayService extends Service implements View.OnTouchListener {
             FlutterEngineCache.getInstance().put(OverlayConstants.CACHED_TAG, engine);
         }
 
-        // Foreground notification
+        // ✅ Create channel first, then show/update the ongoing notification (once)
         createNotificationChannel();
-        Intent notificationIntent = new Intent(this, com.joharride.driver.MainActivity.class)
-                .setAction(Intent.ACTION_MAIN)
-                .addCategory(Intent.CATEGORY_LAUNCHER);
-        int pendingFlags = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
-                ? PendingIntent.FLAG_IMMUTABLE
-                : PendingIntent.FLAG_UPDATE_CURRENT;
-        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, pendingFlags);
+        updateForegroundNotification(
+            WindowSetup.overlayTitle,
+            WindowSetup.overlayContent,
+            WindowSetup.notificationVisibility
+        );
 
-        final int notifyIcon = getDrawableResourceId("mipmap", "launcher");
-        Notification notification = new NotificationCompat.Builder(this, OverlayConstants.CHANNEL_ID)
-                .setContentTitle(WindowSetup.overlayTitle)
-                .setContentText(WindowSetup.overlayContent)
-                .setSmallIcon(notifyIcon == 0 ? R.drawable.notification_icon : notifyIcon)
-                .setContentIntent(pendingIntent)
-                .setVisibility(WindowSetup.notificationVisibility)
-                .build();
-
-        startForeground(OverlayConstants.NOTIFICATION_ID, notification);
         instance = this;
     }
+
 
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
